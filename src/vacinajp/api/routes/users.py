@@ -16,7 +16,7 @@ class UserCreate(BaseModel):
 @users_router.get("/{user_id}")
 async def get_user(user_id: PydanticObjectId):
     async with client.start_transaction() as repo:
-        return await repo.get_user(user_id)
+        return await repo.get_user_info(user_id)
 
 
 @users_router.post("/")

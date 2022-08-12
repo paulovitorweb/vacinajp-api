@@ -1,5 +1,6 @@
 import datetime
 from typing import Generic, List, Tuple, TypeVar, Optional
+from enum import Enum
 
 import pymongo
 from beanie import Document, PydanticObjectId
@@ -38,6 +39,7 @@ class Calendar(Document):
     total_schedules: int  # Total ofertado para este local
     remaining_schedules: int  # Total disponível
     is_available: bool
+    applied_vaccines: int = 0
 
     class Settings:
         name = "calendar"
@@ -53,8 +55,14 @@ class Calendar(Document):
         }
 
 
+class UserRole(Enum):
+    HEALTHCARE_PROFESSIONAL = 'HEALTHCARE_PROFESSIONAL'
+    ADMIN = 'ADMIN'
+
+
 class User(Document):
     name: str
+    roles: List[UserRole] = []
 
     class Settings:
         name = "users"
@@ -110,6 +118,10 @@ class Paged(Generic[T]):
         self.items = items
         self.number = number
         self.more_pages = more_pages
+
+
+class AdminCalendar(Calendar):
+    vaccination_site: VaccinacionSite
 
 
 __beanie_models__ = [VaccinacionSite, Calendar, Schedule, Vaccine, User]

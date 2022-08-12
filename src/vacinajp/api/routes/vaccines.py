@@ -22,8 +22,16 @@ async def create_vaccine(vaccine: VaccineCreate):
     async with client.start_transaction() as repo:
         vaccine = Vaccine(**vaccine.dict())
         site = await repo.get_vaccination_site(vaccine.vaccination_site)
+
         vaccine.vaccination_site_name = site.name
         created_vaccine = await repo.create_vaccine(vaccine)
+
+        calendar = await repo.get_calendar(
+            date=vaccine.date,
+            vaccination_site=vaccine.vaccination_site
+        )
+        await repo.increase_vaccines_applied(calendar)
+
         schedule = await repo.get_schedule(
             user_id=vaccine.user,
             date=vaccine.date,
