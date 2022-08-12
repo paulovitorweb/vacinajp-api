@@ -48,10 +48,12 @@ class Calendar(Document):
             [
                 ("date", pymongo.ASCENDING),
                 ("vaccination_site", pymongo.ASCENDING),
-            ]
+            ],
         ]
         bson_encoders = {
-            datetime.date: lambda dt: datetime.datetime(year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0)
+            datetime.date: lambda dt: datetime.datetime(
+                year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0
+            )
         }
 
 
@@ -68,12 +70,16 @@ class User(Document):
         name = "users"
 
 
+class VaccineLaboratory(Enum):
+    PFIZER = 'PFIZER'
+
+
 class Vaccine(Document):
     user: PydanticObjectId
     date: datetime.date
     vaccination_site: PydanticObjectId
     dose: int
-    laboratory: str = "Pfizer"
+    laboratory: VaccineLaboratory
     vaccination_site_name: str = None
 
     class Settings:
@@ -82,7 +88,9 @@ class Vaccine(Document):
             [("user", pymongo.ASCENDING)],
         ]
         bson_encoders = {
-            datetime.date: lambda dt: datetime.datetime(year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0)
+            datetime.date: lambda dt: datetime.datetime(
+                year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0
+            )
         }
 
 
@@ -100,7 +108,9 @@ class Schedule(Document):
             [("user", pymongo.ASCENDING)],
         ]
         bson_encoders = {
-            datetime.date: lambda dt: datetime.datetime(year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0)
+            datetime.date: lambda dt: datetime.datetime(
+                year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0
+            )
         }
 
 

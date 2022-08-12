@@ -20,11 +20,7 @@ async def seed_vaccination_sites_view():
         person = mimesis.Person()
         address = mimesis.Address(locale='pt-br')
 
-        neighborhoods = [
-            'Centro',
-            'Cristo Redentor',
-            'Mangabeira'
-        ]
+        neighborhoods = ['Centro', 'Cristo Redentor', 'Mangabeira']
 
         data.append(
             VaccinacionSite(
@@ -32,11 +28,9 @@ async def seed_vaccination_sites_view():
                 address=Address(
                     street_name=address.street_name(),
                     street_number=address.street_number(),
-                    neighborhood=random.choice(neighborhoods)
+                    neighborhood=random.choice(neighborhoods),
                 ),
-                geo=GeoJson2DPoint(
-                    coordinates=(address.longitude(), address.latitude())
-                )
+                geo=GeoJson2DPoint(coordinates=(address.longitude(), address.latitude())),
             )
         )
     await VaccinacionSite.insert_many(data)

@@ -2,7 +2,7 @@ import datetime
 
 from pydantic import BaseModel
 from fastapi import APIRouter
-from src.vacinajp.domain.models import Vaccine
+from src.vacinajp.domain.models import Vaccine, VaccineLaboratory
 from src.vacinajp.infrastructure.mongo_client import client
 
 
@@ -14,7 +14,7 @@ class VaccineCreate(BaseModel):
     date: datetime.date
     vaccination_site: str
     dose: int
-    laboratory: str = "Pfizer"
+    laboratory: VaccineLaboratory
 
 
 @vaccine_router.post("/")
@@ -27,15 +27,12 @@ async def create_vaccine(vaccine: VaccineCreate):
         created_vaccine = await repo.create_vaccine(vaccine)
 
         calendar = await repo.get_calendar(
-            date=vaccine.date,
-            vaccination_site=vaccine.vaccination_site
+            date=vaccine.date, vaccination_site_id=vaccine.vaccination_site
         )
         await repo.increase_vaccines_applied(calendar)
 
         schedule = await repo.get_schedule(
-            user_id=vaccine.user,
-            date=vaccine.date,
-            vaccination_site_id=vaccine.vaccination_site
+            user_id=vaccine.user, date=vaccine.date, vaccination_site_id=vaccine.vaccination_site
         )
         if schedule:
             schedule.user_attended = True

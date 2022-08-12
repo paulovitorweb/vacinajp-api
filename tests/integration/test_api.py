@@ -1,9 +1,9 @@
 import datetime
 import pytest
 from httpx import AsyncClient
-from beanie import PydanticObjectId
+from beanie import PydanticObjectId, operators
 
-from src.vacinajp.domain.models import User, UserRole, Schedule
+from src.vacinajp.domain.models import User, UserRole, Schedule, Calendar, Vaccine, VaccineLaboratory
 
 
 pytestmark = pytest.mark.asyncio
@@ -59,21 +59,79 @@ async def test__unset_role_to_user(test_app: AsyncClient):
 async def test__get_available_sites_to_schedule_from_date(test_app: AsyncClient):
     response = await test_app.get(f'/calendar/2022/8/2/vaccination-sites')
     assert response.status_code == 200
-    assert len(response.json()) > 0
-    test_context.vaccination_site_id = response.json()[0]['_id']
+    json = response.json()
+    assert len(json) > 0
+    sites_available_before = len(json)
+    test_context.vaccination_site_ids = [json[0]['_id'], json[1]['_id'], json[3]['_id']]
+
+    sites_to_make_unavailable = await Calendar.find(
+        operators.In(Calendar.vaccination_site, [PydanticObjectId(site_id) for site_id in test_context.vaccination_site_ids[:2]]),
+        Calendar.date == datetime.date(year=2022, month=8, day=2)
+    ).to_list()
+    sites_to_make_unavailable[0].is_available = False
+    await sites_to_make_unavailable[0].replace()
+    sites_to_make_unavailable[1].remaining_schedules = 0
+    await sites_to_make_unavailable[1].replace()
+
+    response = await test_app.get(f'/calendar/2022/8/2/vaccination-sites')
+    assert response.status_code == 200
+    assert len(response.json()) == sites_available_before - 2
 
 
 async def test__create_schedule(test_app: AsyncClient):
+    calendar_before = await get_calendar()
     payload = {
         'user': test_context.user_id,
         'date': '2022-08-12',
-        'vaccination_site': test_context.vaccination_site_id
+        'vaccination_site': test_context.vaccination_site_ids[2]
     }
     response = await test_app.post('/schedules/', json=payload)
     assert response.status_code == 204
+
     schedule = await Schedule.find_one(Schedule.user == PydanticObjectId(test_context.user_id))
     assert schedule.date == datetime.date(year=2022, month=8, day=12)
-    assert schedule.vaccination_site == PydanticObjectId(test_context.vaccination_site_id)
+    assert schedule.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2])
     assert schedule.vaccination_site_name
-    assert not schedule.user_attended
+    assert schedule.user_attended is False
     assert schedule.vaccine is None
+
+    calendar_after = await get_calendar()
+    assert calendar_after.remaining_schedules == calendar_before.remaining_schedules - 1
+
+
+async def test__create_vaccine(test_app: AsyncClient):
+    calendar_before = await get_calendar()
+    payload = {
+        'user': test_context.user_id,
+        'date': '2022-08-12',
+        'vaccination_site': test_context.vaccination_site_ids[2],
+        'dose': 1,
+        'laboratory': 'PFIZER'
+    }
+    response = await test_app.post('/vaccines/', json=payload)
+    assert response.status_code == 200
+
+    vaccine = await Vaccine.find_one(Vaccine.user == PydanticObjectId(test_context.user_id))
+    assert vaccine.date == datetime.date(year=2022, month=8, day=12)
+    assert vaccine.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2])
+    assert vaccine.vaccination_site_name
+    assert vaccine.dose == 1
+    assert vaccine.laboratory == VaccineLaboratory.PFIZER
+
+    calendar_after = await get_calendar()
+    assert calendar_after.applied_vaccines == calendar_before.applied_vaccines + 1
+
+    schedule = await Schedule.find_one(
+        Schedule.date == datetime.date(year=2022, month=8, day=12),
+        Schedule.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2]),
+        Schedule.user == PydanticObjectId(test_context.user_id)
+    )
+    assert schedule.user_attended is True
+    assert schedule.vaccine == vaccine.id
+
+
+async def get_calendar() -> Calendar:
+    return await Calendar.find_one(
+        Calendar.date == datetime.date(year=2022, month=8, day=12),
+        Calendar.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2])
+    )

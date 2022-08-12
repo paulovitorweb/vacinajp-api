@@ -11,8 +11,8 @@ schedule_router = APIRouter()
 
 class ScheduleCreate(BaseModel):
     user: str
-    date : datetime.date
-    vaccination_site : str
+    date: datetime.date
+    vaccination_site: str
 
 
 @schedule_router.post("/")

@@ -13,7 +13,9 @@ async def test_app():
     :return: yield HTTP client.
     """
     async with LifespanManager(app):
-        async with AsyncClient(app=app, base_url="http://127.0.0.1:8000", follow_redirects=True) as ac:
+        async with AsyncClient(
+            app=app, base_url="http://127.0.0.1:8000", follow_redirects=True
+        ) as ac:
             yield ac
 
 
