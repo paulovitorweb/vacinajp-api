@@ -131,7 +131,7 @@ class Paged(Generic[T]):
 
 
 class AdminCalendar(Calendar):
-    vaccination_site: VaccinacionSite
+    vaccination_site_info: VaccinacionSite
 
 
 __beanie_models__ = [VaccinacionSite, Calendar, Schedule, Vaccine, User]

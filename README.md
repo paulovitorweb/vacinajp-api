@@ -43,7 +43,37 @@ docker-compose up -d
 make dev
 ```
 
+### Testes
+
+Há um conjunto de testes de integração que podem ser executados com
+
+```
+make test
+```
+
+Ou
+
+```
+pytest -v
+```
+
+A suíte de testes assíncronos foi construída com:
+
+- pytest
+- httpx: para um cliente de testes com suporte a requisições assíncronas
+- asgi-lifespan: para conseguir testar a api sem precisar subir o servidor
+- pytest-asyncio: para testar código assíncrono com pytest
+
 ### Documentação
 
 - Com Swagger: http://127.0.0.1:8000/docs
 - Com ReDoc: http://127.0.0.1:8000/redoc
+
+### To do
+
+- [ ] Rota para retornar locais de vacinação por proximidade geográfica
+- [ ] Desenho de permissões
+- [ ] Login e autenticação
+- [ ] Mais cenários de teste
+- [ ] Mockar banco com mongomock_motor
+- [ ] Implementar cache em rotas mais perenes

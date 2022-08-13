@@ -37,7 +37,7 @@ async def update_calendar(
         await repo.update_calendar(calendar)
 
 
-@admin_router.get("/stats/{year}/{month}/{day}/", response_model=AdminCalendar)
+@admin_router.get("/stats/{year}/{month}/{day}/", response_model=List[AdminCalendar])
 async def get_stats_from_date(year: int, month: int, day: int):
     async with client.start_transaction() as repo:
         return await repo.get_calendar_with_vaccination_site_from_date(
