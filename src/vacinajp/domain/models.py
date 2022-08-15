@@ -124,6 +124,7 @@ class Schedule(Document):
 
 class UserInfo(BaseModel):
     name: str
+    cpf: str
     birth_date: datetime.date
     roles: List[UserRole] = []
     vaccine_card: List[Vaccine]

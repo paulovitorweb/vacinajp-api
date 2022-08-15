@@ -8,14 +8,21 @@ from fastapi.security import (
 )
 from jose import JWTError
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
 from src.vacinajp.infrastructure.mongo_client import client
-from src.vacinajp.domain.models import UserInfo
+from src.vacinajp.domain.models import User, UserInfo
 from src.vacinajp.common.helpers import JwtHelper, SecurityHelper
 
 
 users_router = APIRouter()
 security = HTTPBearer()
+
+
+class CreateUser(BaseModel):
+    name: str
+    cpf: str
+    birth_date: str
 
 
 class Token(BaseModel):
@@ -37,6 +44,20 @@ class BasicUserLogin(BaseUserLogin):
 
 class UserLoginWithPassword(BaseUserLogin):
     password: str
+
+
+@users_router.post("/")
+async def create_user(user: CreateUser):
+    async with client.start_transaction() as repo:
+        user = User(**user.dict())
+        try:
+            user = await repo.create_user(user)
+        except DuplicateKeyError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail='User with provided cpf already exists',
+            )
+        await repo.get_user_info(user.id)
 
 
 @users_router.post("/login", response_model=Token)
