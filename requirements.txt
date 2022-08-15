@@ -3,3 +3,7 @@ fastapi==0.79.0
 mimesis==5.5.0
 motor==3.0.0
 uvicorn==0.18.2
+python-jose==3.3.0
+cryptography==37.0.4
+bcrypt==3.2.2
+passlib==1.7.4

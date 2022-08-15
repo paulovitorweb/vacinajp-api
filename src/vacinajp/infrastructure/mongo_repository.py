@@ -62,7 +62,13 @@ class MongoRepository(Repository):
         await schedule.replace(session=self._session)
 
     async def get_user(self, user_id: PydanticObjectId) -> User:
-        return await User.find(User.id == user_id)
+        return await User.get(user_id)
+
+    async def update_user(self, user: User) -> None:
+        await user.replace(session=self._session)
+
+    async def get_user_from_cpf(self, cpf: str) -> User:
+        return await User.find_one(User.cpf == cpf)
 
     async def get_user_info(self, user_id: PydanticObjectId) -> UserInfo:
         user = (

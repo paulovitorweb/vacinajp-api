@@ -3,7 +3,7 @@ from typing import Generic, List, Tuple, TypeVar, Optional
 from enum import Enum
 
 import pymongo
-from beanie import Document, PydanticObjectId
+from beanie import Document, PydanticObjectId, Indexed
 from pydantic import BaseModel
 
 
@@ -64,10 +64,18 @@ class UserRole(Enum):
 
 class User(Document):
     name: str
+    cpf: Indexed(str, unique=True)
+    birth_date: datetime.date
     roles: List[UserRole] = []
+    hashed_password: Optional[str] = None
 
     class Settings:
         name = "users"
+        bson_encoders = {
+            datetime.date: lambda dt: datetime.datetime(
+                year=dt.year, month=dt.month, day=dt.day, hour=0, minute=0, second=0
+            )
+        }
 
 
 class VaccineLaboratory(Enum):
@@ -114,7 +122,10 @@ class Schedule(Document):
         }
 
 
-class UserInfo(User):
+class UserInfo(BaseModel):
+    name: str
+    birth_date: datetime.date
+    roles: List[UserRole] = []
     vaccine_card: List[Vaccine]
     schedules: List[Schedule]
 
