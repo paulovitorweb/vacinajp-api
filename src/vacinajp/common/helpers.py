@@ -1,3 +1,4 @@
+import string
 import secrets
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
@@ -23,7 +24,9 @@ class SecurityHelper:
     @staticmethod
     def generate_safe_password():
         password_length = 13
-        return secrets.token_urlsafe(password_length)
+        alphabet = string.ascii_letters + string.digits
+        password = ''.join(secrets.choice(alphabet) for _ in range(password_length))
+        return password
 
 
 class JwtHelper:
