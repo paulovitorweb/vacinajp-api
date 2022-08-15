@@ -1,22 +1,15 @@
 import datetime
-from typing import Optional
-from beanie import PydanticObjectId
-from fastapi import APIRouter, HTTPException, Security, Depends, status
-from fastapi.security import (
-    HTTPAuthorizationCredentials,
-    HTTPBearer,
-)
-from jose import JWTError
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
 from src.vacinajp.infrastructure.mongo_client import client
 from src.vacinajp.domain.models import User, UserInfo
 from src.vacinajp.common.helpers import JwtHelper, SecurityHelper
+from src.vacinajp.api.dependencies import get_current_user
 
 
 users_router = APIRouter()
-security = HTTPBearer()
 
 
 class CreateUser(BaseModel):
@@ -28,10 +21,6 @@ class CreateUser(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
-
-
-class TokenData(BaseModel):
-    user_id: Optional[str] = None
 
 
 class BaseUserLogin(BaseModel):
@@ -57,7 +46,6 @@ async def create_user(user: CreateUser):
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail='User with provided cpf already exists',
             )
-        await repo.get_user_info(user.id)
 
 
 @users_router.post("/login", response_model=Token)
@@ -101,25 +89,6 @@ async def staff_login(login: UserLoginWithPassword):
         access_token = JwtHelper.create_access_token(data={"sub": str(user.id)})
 
         return {"access_token": access_token, "token_type": "bearer"}
-
-
-async def get_current_user(authorization: HTTPAuthorizationCredentials = Security(security)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials"
-    )
-    try:
-        payload = JwtHelper.decode_access_token(authorization.credentials)
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-        token_data = TokenData(user_id=user_id)
-    except JWTError:
-        raise credentials_exception
-    async with client.start_transaction() as repo:
-        user_info = await repo.get_user_info(PydanticObjectId(token_data.user_id))
-    if user_info is None:
-        raise credentials_exception
-    return user_info
 
 
 @users_router.get("/me", response_model=UserInfo)

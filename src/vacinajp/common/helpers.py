@@ -38,5 +38,6 @@ class JwtHelper:
         encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm="HS256")
         return encoded_jwt
 
+    @staticmethod
     def decode_access_token(token: str) -> dict:
         return jwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
