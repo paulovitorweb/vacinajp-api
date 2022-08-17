@@ -1,9 +1,10 @@
 import datetime
 
 from pydantic import BaseModel
-from fastapi import APIRouter
-from src.vacinajp.domain.models import Vaccine, VaccineLaboratory
+from fastapi import APIRouter, Depends
+from src.vacinajp.domain.models import Vaccine, VaccineLaboratory, UserInfo
 from src.vacinajp.infrastructure.mongo_client import client
+from src.vacinajp.api.dependencies import get_current_professional_user
 
 
 vaccine_router = APIRouter()
@@ -18,12 +19,15 @@ class VaccineCreate(BaseModel):
 
 
 @vaccine_router.post("/")
-async def create_vaccine(vaccine: VaccineCreate):
+async def create_vaccine(
+    vaccine: VaccineCreate, current_user: UserInfo = Depends(get_current_professional_user)
+):
     async with client.start_transaction() as repo:
         vaccine = Vaccine(**vaccine.dict())
         site = await repo.get_vaccination_site(vaccine.vaccination_site)
 
         vaccine.vaccination_site_name = site.name
+        vaccine.professional = current_user.id
         created_vaccine = await repo.create_vaccine(vaccine)
 
         calendar = await repo.get_calendar(

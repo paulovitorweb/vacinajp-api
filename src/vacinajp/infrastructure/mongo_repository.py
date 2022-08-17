@@ -1,7 +1,8 @@
 import datetime
-from typing import List
+from typing import List, Optional
 from pymongo.client_session import ClientSession
 from beanie import PydanticObjectId
+from beanie.odm.queries.find import FindOne
 from .repository import Repository
 from ..domain.models import (
     Schedule,
@@ -22,8 +23,8 @@ class MongoRepository(Repository):
     def __init__(self, session: ClientSession):
         self._session = session
 
-    async def create_schedule(self, schedule: Schedule) -> None:
-        await schedule.insert(session=self._session)
+    async def create_schedule(self, schedule: Schedule) -> Schedule:
+        return await schedule.insert(session=self._session)
 
     async def get_available_calendar_from_schedule(self, schedule: Schedule) -> Calendar:
         filters = [
@@ -39,6 +40,47 @@ class MongoRepository(Repository):
     ) -> Calendar:
         filters = [Calendar.date == date, Calendar.vaccination_site == vaccination_site_id]
         return await Calendar.find_one(*filters)
+
+    async def change_available_schedules_from_calendar(
+        self,
+        date: datetime.date,
+        vaccination_site_id: PydanticObjectId,
+        is_available: Optional[bool] = None,
+        schedules_variation: Optional[int] = None,
+    ) -> bool:
+        """
+        Change available schedules from specific calendar, identified by date and vaccination site.
+            Only updates if the resulting amount of remaining schedules is greater than or equal to 0.
+
+        :param date: datetime.date
+        :param vaccination_site_id: PydanticObjectId
+        :param is_available: Optional[bool] - whether the vaccination site should be available
+        :param schedules_variation: Optional[int] - the variation of available schedules
+        :return: bool - True if updated, false otherwise
+        """
+        filters = [Calendar.date == date, Calendar.vaccination_site == vaccination_site_id]
+        update = {}
+
+        if isinstance(schedules_variation, int):
+            update["$inc"] = {
+                Calendar.remaining_schedules: schedules_variation,
+                Calendar.total_schedules: schedules_variation,
+            }
+            if schedules_variation < 0:
+                filters.append(Calendar.remaining_schedules >= -schedules_variation)
+
+        if isinstance(is_available, bool):
+            update["$set"] = {Calendar.is_available: is_available}
+
+        if not update:
+            return False
+
+        query_result = await Calendar.find_one(*filters).update(update, session=self._session)
+
+        if query_result.modified_count == 1:
+            return True
+
+        return False
 
     async def decrease_remaining_schedules(self, calendar: Calendar) -> None:
         await calendar.update({"$inc": {Calendar.remaining_schedules: -1}}, session=self._session)

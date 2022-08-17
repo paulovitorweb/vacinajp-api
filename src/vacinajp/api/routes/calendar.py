@@ -1,43 +1,28 @@
-import calendar
 import datetime
-from fastapi import APIRouter, Response, status
-from src.vacinajp.domain.models import VaccinacionSite, Calendar
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from beanie import PydanticObjectId
+from src.vacinajp.domain.models import VaccinacionSite, Calendar, UserInfo, AdminCalendar
+from src.vacinajp.infrastructure.mongo_client import client
+from src.vacinajp.api.dependencies import get_current_user, get_current_operator_user
 
 
 calendar_router = APIRouter()
 
 
-@calendar_router.post("/seed", response_class=Response)
-async def seed_calendar(year: int, month: int, schedules: int = 100):
-    await seed_calendar_view(year, month, schedules)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+class CalendarUpdate(BaseModel):
+    is_available: Optional[bool] = None
+    available_schedules_variation: Optional[int] = None
 
 
-@calendar_router.get("/{year}/{month}/{day}/vaccination-sites")
-async def get_available_sites_to_schedule_from_date(year: int, month: int, day: int):
-    return await get_available_sites_to_schedule_from_date_view(year=year, month=month, day=day)
-
-
-async def seed_calendar_view(year: int, month: int, schedules: int):
-    data = []
-    vaccination_sites = await VaccinacionSite.find_all().to_list()
-    for date in calendar.Calendar().itermonthdates(year, month):
-        if date.month != month:
-            continue
-        for vaccination_site in vaccination_sites:
-            data.append(
-                Calendar(
-                    date=date,
-                    vaccination_site=vaccination_site.id,
-                    is_available=True,
-                    total_schedules=schedules,
-                    remaining_schedules=schedules,
-                )
-            )
-    await Calendar.insert_many(data)
-
-
-async def get_available_sites_to_schedule_from_date_view(year: int, month: int, day: int):
+@calendar_router.get("/{year}/{month}/{day}")
+async def get_available_sites_to_schedule_from_date(
+    year: int,
+    month: int,
+    day: int,
+    current_user: UserInfo = Depends(get_current_user),
+):
     filters = [
         Calendar.date == datetime.date(year=year, month=month, day=day),
         Calendar.remaining_schedules > 0,
@@ -47,7 +32,6 @@ async def get_available_sites_to_schedule_from_date_view(year: int, month: int, 
         await Calendar.find(*filters)
         .aggregate(
             [
-                # Pesquisa os dados dos locais de vacinação
                 {
                     "$lookup": {
                         "from": "vaccination_sites",
@@ -57,7 +41,6 @@ async def get_available_sites_to_schedule_from_date_view(year: int, month: int, 
                     }
                 },
                 {"$unwind": "$vaccination_site_info"},
-                # Projeção final
                 {
                     "$project": {
                         "_id": "$vaccination_site_info._id",
@@ -72,3 +55,43 @@ async def get_available_sites_to_schedule_from_date_view(year: int, month: int, 
         .to_list()
     )
     return available_sites
+
+
+@calendar_router.patch("/{year}/{month}/{day}/{vaccination_site_id}")
+async def update_calendar(
+    year: int,
+    month: int,
+    day: int,
+    vaccination_site_id: PydanticObjectId,
+    calendar_update: CalendarUpdate,
+    current_user: UserInfo = Depends(get_current_operator_user),
+):
+    if (
+        calendar_update.is_available is None
+        and calendar_update.available_schedules_variation is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide something to be updated",
+        )
+    async with client.start_transaction() as repo:
+        if not await repo.change_available_schedules_from_calendar(
+            date=datetime.date(year=year, month=month, day=day),
+            vaccination_site_id=vaccination_site_id,
+            is_available=calendar_update.is_available,
+            schedules_variation=calendar_update.available_schedules_variation,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="The calendar could not be updated. Check the number of schedules available.",
+            )
+
+
+@calendar_router.get("/stats/{year}/{month}/{day}/", response_model=List[AdminCalendar])
+async def get_stats_from_date(
+    year: int, month: int, day: int, current_user: UserInfo = Depends(get_current_operator_user)
+):
+    async with client.start_transaction() as repo:
+        return await repo.get_calendar_with_vaccination_site_from_date(
+            date=datetime.date(year=year, month=month, day=day)
+        )

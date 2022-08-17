@@ -1,20 +1,19 @@
-import datetime
+import calendar
+import random
+import mimesis
 from typing import List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from beanie import PydanticObjectId
 
-from src.vacinajp.domain.models import AdminCalendar, UserRole
+from src.vacinajp.domain.models import UserRole, VaccinacionSite, Calendar, Address, GeoJson2DPoint
 from src.vacinajp.infrastructure.mongo_client import client
 from src.vacinajp.common.helpers import SecurityHelper
+from src.vacinajp.api.dependencies import check_admin_access
 
 
 admin_router = APIRouter()
-
-
-class CalendarUpdate(BaseModel):
-    is_available: bool
 
 
 class RoleToUser(BaseModel):
@@ -25,39 +24,16 @@ class PasswordToUser(BaseModel):
     password: str
 
 
-@admin_router.patch("/calendar/{year}/{month}/{day}/{vaccination_site_id}")
-async def update_calendar(
-    year: int,
-    month: int,
-    day: int,
-    vaccination_site_id: PydanticObjectId,
-    calendar_update: CalendarUpdate,
-):
-    async with client.start_transaction() as repo:
-        calendar = await repo.get_calendar(
-            date=datetime.date(year=year, month=month, day=day),
-            vaccination_site_id=vaccination_site_id,
-        )
-        calendar.is_available = calendar_update.is_available
-        await repo.update_calendar(calendar)
-
-
-@admin_router.get("/stats/{year}/{month}/{day}/", response_model=List[AdminCalendar])
-async def get_stats_from_date(year: int, month: int, day: int):
-    async with client.start_transaction() as repo:
-        return await repo.get_calendar_with_vaccination_site_from_date(
-            date=datetime.date(year=year, month=month, day=day)
-        )
-
-
 @admin_router.patch("/users/{user_id}/roles")
-async def set_role_to_user(user_id: PydanticObjectId, role_to_user: RoleToUser):
+async def set_role_to_user(
+    user_id: PydanticObjectId, role_to_user: RoleToUser, _: bool = Depends(check_admin_access)
+):
     async with client.start_transaction() as repo:
         await repo.set_user_role(user_id=user_id, user_roles=role_to_user.roles)
 
 
 @admin_router.patch("/users/{user_id}/generate-password", response_model=PasswordToUser)
-async def generate_password(user_id: PydanticObjectId):
+async def generate_password(user_id: PydanticObjectId, _: bool = Depends(check_admin_access)):
     async with client.start_transaction() as repo:
         user = await repo.get_user(user_id=user_id)
         password = SecurityHelper.generate_safe_password()
@@ -65,3 +41,49 @@ async def generate_password(user_id: PydanticObjectId):
         user.hashed_password = hashed_password
         await repo.update_user(user)
         return {'password': password}
+
+
+@admin_router.post("/calendar/seed")
+async def seed_calendar(
+    year: int, month: int, schedules: int = 100, _: bool = Depends(check_admin_access)
+):
+    data = []
+    vaccination_sites = await VaccinacionSite.find_all().to_list()
+    for date in calendar.Calendar().itermonthdates(year, month):
+        if date.month != month:
+            continue
+        for vaccination_site in vaccination_sites:
+            data.append(
+                Calendar(
+                    date=date,
+                    vaccination_site=vaccination_site.id,
+                    is_available=True,
+                    total_schedules=schedules,
+                    remaining_schedules=schedules,
+                )
+            )
+    await Calendar.insert_many(data)
+
+
+@admin_router.post("/vaccination-sites/seed")
+async def seed_vaccination_sites(_: bool = Depends(check_admin_access)):
+    count = 50
+    data = []
+    for _ in range(count):
+        person = mimesis.Person()
+        address = mimesis.Address(locale='pt-br')
+
+        neighborhoods = ['Centro', 'Cristo Redentor', 'Mangabeira']
+
+        data.append(
+            VaccinacionSite(
+                name=person.full_name(),
+                address=Address(
+                    street_name=address.street_name(),
+                    street_number=address.street_number(),
+                    neighborhood=random.choice(neighborhoods),
+                ),
+                geo=GeoJson2DPoint(coordinates=(address.longitude(), address.latitude())),
+            )
+        )
+    await VaccinacionSite.insert_many(data)

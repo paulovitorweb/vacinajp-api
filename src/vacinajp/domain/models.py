@@ -4,7 +4,7 @@ from enum import Enum
 
 import pymongo
 from beanie import Document, PydanticObjectId, Indexed
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 T = TypeVar("T")
@@ -59,7 +59,7 @@ class Calendar(Document):
 
 class UserRole(Enum):
     HEALTHCARE_PROFESSIONAL = 'HEALTHCARE_PROFESSIONAL'
-    ADMIN = 'ADMIN'
+    OPERATOR = 'OPERATOR'
 
 
 class User(Document):
@@ -88,7 +88,8 @@ class Vaccine(Document):
     vaccination_site: PydanticObjectId
     dose: int
     laboratory: VaccineLaboratory
-    vaccination_site_name: str = None
+    professional: PydanticObjectId
+    vaccination_site_name: str
 
     class Settings:
         name = "vaccines"
@@ -123,6 +124,7 @@ class Schedule(Document):
 
 
 class UserInfo(BaseModel):
+    id: PydanticObjectId = Field(..., alias='_id')
     name: str
     cpf: str
     birth_date: datetime.date
