@@ -1,21 +1,36 @@
 import datetime
+from typing import List
+
 from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel
-from pymongo.errors import DuplicateKeyError
+from pydantic import BaseModel, Field
+from beanie import PydanticObjectId
 
 from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
-from src.vacinajp.domain.models import User, UserInfo
+from src.vacinajp.domain.models import User, UserInfo, UserRole
 from src.vacinajp.common.helpers import JwtHelper, SecurityHelper
+from src.vacinajp.common.errors import UserAlreadyExists
 from src.vacinajp.api.dependencies import get_current_user, get_uow
 
 
 users_router = APIRouter()
 
 
+class ExceptionDetail(BaseModel):
+    detail: str
+
+
 class CreateUser(BaseModel):
     name: str
     cpf: str
-    birth_date: str
+    birth_date: datetime.date
+
+
+class UserOut(BaseModel):
+    id: PydanticObjectId = Field(alias='_id')
+    name: str
+    cpf: str
+    birth_date: datetime.date
+    roles: List[UserRole]
 
 
 class Token(BaseModel):
@@ -35,20 +50,38 @@ class UserLoginWithPassword(BaseUserLogin):
     password: str
 
 
-@users_router.post("/")
+login_responses = {
+    401: {"model": ExceptionDetail},
+    403: {"model": ExceptionDetail},
+    404: {"model": ExceptionDetail},
+}
+
+
+@users_router.post(
+    "/",
+    response_model=UserOut,
+    status_code=201,
+    responses={409: {"model": ExceptionDetail}},
+)
 async def create_user(user: CreateUser, uow: MongoUnitOfWork = Depends(get_uow)):
     async with uow():
         user = User(**user.dict())
         try:
             user = await uow.users.create(user)
-        except DuplicateKeyError:
+        except UserAlreadyExists:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_409_CONFLICT,
                 detail='User with provided cpf already exists',
             )
+        return user
 
 
-@users_router.post("/login", response_model=Token)
+@users_router.post(
+    "/login",
+    response_model=Token,
+    status_code=200,
+    responses=login_responses,
+)
 async def basic_login(login: BasicUserLogin, uow: MongoUnitOfWork = Depends(get_uow)):
     async with uow():
         user = await uow.users.get_from_cpf(login.cpf)
@@ -69,7 +102,12 @@ async def basic_login(login: BasicUserLogin, uow: MongoUnitOfWork = Depends(get_
         return {"access_token": access_token, "token_type": "bearer"}
 
 
-@users_router.post("/login/staff", response_model=Token)
+@users_router.post(
+    "/login/staff",
+    response_model=Token,
+    status_code=200,
+    responses=login_responses,
+)
 async def staff_login(login: UserLoginWithPassword, uow: MongoUnitOfWork = Depends(get_uow)):
     async with uow():
         user = await uow.users.get_from_cpf(login.cpf)
@@ -91,6 +129,11 @@ async def staff_login(login: UserLoginWithPassword, uow: MongoUnitOfWork = Depen
         return {"access_token": access_token, "token_type": "bearer"}
 
 
-@users_router.get("/me", response_model=UserInfo)
+@users_router.get(
+    "/me",
+    response_model=UserInfo,
+    status_code=200,
+    responses={401: {"model": ExceptionDetail}},
+)
 async def read_users_me(current_user: UserInfo = Depends(get_current_user)):
     return current_user

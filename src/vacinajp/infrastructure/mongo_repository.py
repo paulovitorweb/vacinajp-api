@@ -3,8 +3,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from typing import List, Optional
 
+from pymongo.errors import DuplicateKeyError
 from pymongo.client_session import ClientSession
 from beanie import PydanticObjectId
+
+from src.vacinajp.common.errors import UserAlreadyExists
 from src.vacinajp.domain.models import (
     Schedule,
     Calendar,
@@ -292,4 +295,7 @@ class MongoUserRepository:
             return user[0]
 
     async def create(self, user: User) -> User:
-        return await user.insert(session=self._session)
+        try:
+            return await user.insert(session=self._session)
+        except DuplicateKeyError:
+            raise UserAlreadyExists
