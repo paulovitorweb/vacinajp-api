@@ -8,9 +8,9 @@ from pydantic import BaseModel
 from beanie import PydanticObjectId
 
 from src.vacinajp.domain.models import UserRole, VaccinacionSite, Calendar, Address, GeoJson2DPoint
-from src.vacinajp.infrastructure.mongo_client import client
+from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
 from src.vacinajp.common.helpers import SecurityHelper
-from src.vacinajp.api.dependencies import check_admin_access
+from src.vacinajp.api.dependencies import check_admin_access, get_uow
 
 
 admin_router = APIRouter()
@@ -26,20 +26,31 @@ class PasswordToUser(BaseModel):
 
 @admin_router.patch("/users/{user_id}/roles")
 async def set_role_to_user(
-    user_id: PydanticObjectId, role_to_user: RoleToUser, _: bool = Depends(check_admin_access)
+    user_id: PydanticObjectId,
+    role_to_user: RoleToUser,
+    _: bool = Depends(check_admin_access),
+    uow: MongoUnitOfWork = Depends(get_uow),
 ):
-    async with client.start_transaction() as repo:
-        await repo.set_user_role(user_id=user_id, user_roles=role_to_user.roles)
+    # this context doesn't have to be transactional because it's not multi-document
+    async with uow():
+        user = await uow.users.get(user_id)
+        user.roles = role_to_user.roles
+        await uow.users.update(user)
 
 
 @admin_router.patch("/users/{user_id}/generate-password", response_model=PasswordToUser)
-async def generate_password(user_id: PydanticObjectId, _: bool = Depends(check_admin_access)):
-    async with client.start_transaction() as repo:
-        user = await repo.get_user(user_id=user_id)
+async def generate_password(
+    user_id: PydanticObjectId,
+    _: bool = Depends(check_admin_access),
+    uow: MongoUnitOfWork = Depends(get_uow),
+):
+    # this context doesn't have to be transactional because it's not multi-document
+    async with uow():
+        user = await uow.users.get(user_id)
         password = SecurityHelper.generate_safe_password()
         hashed_password = SecurityHelper.get_password_hash(password)
         user.hashed_password = hashed_password
-        await repo.update_user(user)
+        await uow.users.update(user)
         return {'password': password}
 
 

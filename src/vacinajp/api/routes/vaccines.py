@@ -2,9 +2,10 @@ import datetime
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
+
 from src.vacinajp.domain.models import Vaccine, VaccineLaboratory, UserInfo
-from src.vacinajp.infrastructure.mongo_client import client
-from src.vacinajp.api.dependencies import get_current_professional_user
+from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.api.dependencies import get_current_professional_user, get_uow
 
 
 vaccine_router = APIRouter()
@@ -20,25 +21,28 @@ class VaccineCreate(BaseModel):
 
 @vaccine_router.post("/")
 async def create_vaccine(
-    vaccine: VaccineCreate, current_user: UserInfo = Depends(get_current_professional_user)
+    vaccine: VaccineCreate,
+    current_user: UserInfo = Depends(get_current_professional_user),
+    uow: MongoUnitOfWork = Depends(get_uow),
 ):
-    async with client.start_transaction() as repo:
-        vaccine = Vaccine(**vaccine.dict())
-        site = await repo.get_vaccination_site(vaccine.vaccination_site)
+    async with uow(transactional=True):
+        site = await uow.vaccination_sites.get(vaccine.vaccination_site)
 
-        vaccine.vaccination_site_name = site.name
-        vaccine.professional = current_user.id
-        created_vaccine = await repo.create_vaccine(vaccine)
+        vaccine = Vaccine(
+            **vaccine.dict(), vaccination_site_name=site.name, professional=current_user.id
+        )
 
-        calendar = await repo.get_calendar(
+        created_vaccine = await uow.vaccines.create(vaccine)
+
+        calendar = await uow.calendar.get(
             date=vaccine.date, vaccination_site_id=vaccine.vaccination_site
         )
-        await repo.increase_vaccines_applied(calendar)
+        await uow.calendar.increase_vaccines_applied(calendar)
 
-        schedule = await repo.get_schedule(
+        schedule = await uow.schedules.get(
             user_id=vaccine.user, date=vaccine.date, vaccination_site_id=vaccine.vaccination_site
         )
         if schedule:
             schedule.user_attended = True
             schedule.vaccine = created_vaccine.id
-            await repo.update_schedule(schedule)
+            await uow.schedules.update(schedule)

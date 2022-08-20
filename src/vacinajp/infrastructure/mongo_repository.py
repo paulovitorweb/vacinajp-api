@@ -1,10 +1,11 @@
 import datetime
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 from typing import List, Optional
+
 from pymongo.client_session import ClientSession
 from beanie import PydanticObjectId
-from beanie.odm.queries.find import FindOne
-from .repository import Repository
-from ..domain.models import (
+from src.vacinajp.domain.models import (
     Schedule,
     Calendar,
     UserInfo,
@@ -12,19 +13,117 @@ from ..domain.models import (
     VaccinacionSite,
     Vaccine,
     AdminCalendar,
-    UserRole,
 )
 
 
-class MongoRepository(Repository):
+class MongoUnitOfWork:
 
     _session: ClientSession
 
     def __init__(self, session: ClientSession):
         self._session = session
 
-    async def create_schedule(self, schedule: Schedule) -> Schedule:
+    @asynccontextmanager
+    async def __call__(self, transactional: bool = False) -> AsyncIterator['MongoUnitOfWork']:
+        if transactional:
+            async with self._session.start_transaction():
+                yield self
+        else:
+            yield self
+
+    @property
+    def schedules(self) -> 'MongoScheduleRepository':
+        return MongoScheduleRepository(session=self._session)
+
+    @property
+    def users(self) -> 'MongoUserRepository':
+        return MongoUserRepository(session=self._session)
+
+    @property
+    def calendar(self) -> 'MongoCalendarRepository':
+        return MongoCalendarRepository(session=self._session)
+
+    @property
+    def vaccination_sites(self) -> 'MongoVaccinationSiteRepository':
+        return MongoVaccinationSiteRepository(session=self._session)
+
+    @property
+    def vaccines(self) -> 'MongoVaccineRepository':
+        return MongoVaccineRepository(session=self._session)
+
+    async def get_vaccines_from(self, date: datetime.date) -> List[AdminCalendar]:
+        available_sites = (
+            await Calendar.find(Calendar.date == date)
+            .aggregate(
+                [
+                    {
+                        "$lookup": {
+                            "from": "vaccination_sites",
+                            "localField": "vaccination_site",
+                            "foreignField": "_id",
+                            "as": "vaccination_site_info",
+                        }
+                    },
+                    {"$unwind": "$vaccination_site_info"},
+                ],
+                projection_model=AdminCalendar,
+            )
+            .to_list()
+        )
+        return available_sites
+
+
+class MongoScheduleRepository:
+
+    _session: ClientSession
+
+    def __init__(self, session: ClientSession):
+        self._session = session
+
+    async def create(self, schedule: Schedule) -> Schedule:
         return await schedule.insert(session=self._session)
+
+    async def get(
+        self, user_id: PydanticObjectId, date: datetime.date, vaccination_site_id: PydanticObjectId
+    ) -> Schedule:
+        return await Schedule.find_one(
+            Schedule.user == user_id,
+            Schedule.date == date,
+            Schedule.vaccination_site == vaccination_site_id,
+        )
+
+    async def update(self, schedule: Schedule) -> None:
+        await schedule.replace(session=self._session)
+
+
+class MongoVaccinationSiteRepository:
+
+    _session: ClientSession
+
+    def __init__(self, session: ClientSession):
+        self._session = session
+
+    async def get(self, vaccination_site_id: PydanticObjectId) -> VaccinacionSite:
+        return await VaccinacionSite.get(vaccination_site_id)
+
+
+class MongoVaccineRepository:
+
+    _session: ClientSession
+
+    def __init__(self, session: ClientSession):
+        self._session = session
+
+    async def create(self, vaccine: Vaccine) -> Vaccine:
+        return await vaccine.insert(session=self._session)
+
+
+class MongoCalendarRepository:
+
+    _session: ClientSession
+
+    def __init__(self, session: ClientSession):
+        self._session = session
 
     async def get_available_calendar_from_schedule(self, schedule: Schedule) -> Calendar:
         filters = [
@@ -35,9 +134,43 @@ class MongoRepository(Repository):
         ]
         return await Calendar.find_one(*filters)
 
-    async def get_calendar(
-        self, date: datetime.date, vaccination_site_id: PydanticObjectId
-    ) -> Calendar:
+    async def get_available_sites_to_schedule_from_date(
+        self, date: datetime.date
+    ) -> List[VaccinacionSite]:
+        filters = [
+            Calendar.date == date,
+            Calendar.remaining_schedules > 0,
+            Calendar.is_available == True,
+        ]
+        available_sites = (
+            await Calendar.find(*filters)
+            .aggregate(
+                [
+                    {
+                        "$lookup": {
+                            "from": "vaccination_sites",
+                            "localField": "vaccination_site",
+                            "foreignField": "_id",
+                            "as": "vaccination_site_info",
+                        }
+                    },
+                    {"$unwind": "$vaccination_site_info"},
+                    {
+                        "$project": {
+                            "_id": "$vaccination_site_info._id",
+                            "name": "$vaccination_site_info.name",
+                            "address": "$vaccination_site_info.address",
+                            "geo": "$vaccination_site_info.geo",
+                        }
+                    },
+                ],
+                projection_model=VaccinacionSite,
+            )
+            .to_list()
+        )
+        return available_sites
+
+    async def get(self, date: datetime.date, vaccination_site_id: PydanticObjectId) -> Calendar:
         filters = [Calendar.date == date, Calendar.vaccination_site == vaccination_site_id]
         return await Calendar.find_one(*filters)
 
@@ -47,7 +180,7 @@ class MongoRepository(Repository):
         vaccination_site_id: PydanticObjectId,
         is_available: Optional[bool] = None,
         schedules_variation: Optional[int] = None,
-    ) -> bool:
+    ) -> None:
         """
         Change available schedules from specific calendar, identified by date and vaccination site.
             Only updates if the resulting amount of remaining schedules is greater than or equal to 0.
@@ -56,7 +189,7 @@ class MongoRepository(Repository):
         :param vaccination_site_id: PydanticObjectId
         :param is_available: Optional[bool] - whether the vaccination site should be available
         :param schedules_variation: Optional[int] - the variation of available schedules
-        :return: bool - True if updated, false otherwise
+        :return: None
         """
         filters = [Calendar.date == date, Calendar.vaccination_site == vaccination_site_id]
         update = {}
@@ -72,15 +205,11 @@ class MongoRepository(Repository):
         if isinstance(is_available, bool):
             update["$set"] = {Calendar.is_available: is_available}
 
-        if not update:
-            return False
+        assert not update, "No modifications to perform"
 
         query_result = await Calendar.find_one(*filters).update(update, session=self._session)
 
-        if query_result.modified_count == 1:
-            return True
-
-        return False
+        assert query_result.modified_count == 1, "No modifications have been made"
 
     async def decrease_remaining_schedules(self, calendar: Calendar) -> None:
         await calendar.update({"$inc": {Calendar.remaining_schedules: -1}}, session=self._session)
@@ -90,69 +219,6 @@ class MongoRepository(Repository):
 
     async def update_calendar(self, calendar: Calendar) -> None:
         await calendar.replace(session=self._session)
-
-    async def get_schedule(
-        self, user_id: PydanticObjectId, date: datetime.date, vaccination_site_id: PydanticObjectId
-    ) -> Schedule:
-        return await Schedule.find_one(
-            Schedule.user == user_id,
-            Schedule.date == date,
-            Schedule.vaccination_site == vaccination_site_id,
-        )
-
-    async def update_schedule(self, schedule: Schedule) -> None:
-        await schedule.replace(session=self._session)
-
-    async def get_user(self, user_id: PydanticObjectId) -> User:
-        return await User.get(user_id)
-
-    async def update_user(self, user: User) -> None:
-        await user.replace(session=self._session)
-
-    async def get_user_from_cpf(self, cpf: str) -> User:
-        return await User.find_one(User.cpf == cpf)
-
-    async def get_user_info(self, user_id: PydanticObjectId) -> UserInfo:
-        user = (
-            await User.find(User.id == user_id)
-            .aggregate(
-                [
-                    {
-                        "$lookup": {
-                            "from": "vaccines",
-                            "localField": "_id",
-                            "foreignField": "user",
-                            "as": "vaccine_card",
-                        }
-                    },
-                    {
-                        "$lookup": {
-                            "from": "schedules",
-                            "localField": "_id",
-                            "foreignField": "user",
-                            "as": "schedules",
-                        }
-                    },
-                ],
-                projection_model=UserInfo,
-            )
-            .to_list()
-        )
-
-        if user:
-            return user[0]
-
-    async def create_user(self, user: User) -> User:
-        return await user.insert(session=self._session)
-
-    async def set_user_role(self, user_id: PydanticObjectId, user_roles: List[UserRole]) -> None:
-        await User.find_one(User.id == user_id).update({'$set': {User.roles: user_roles}})
-
-    async def get_vaccination_site(self, vaccination_site_id: PydanticObjectId) -> VaccinacionSite:
-        return await VaccinacionSite.get(vaccination_site_id)
-
-    async def create_vaccine(self, vaccine: Vaccine) -> Vaccine:
-        return await vaccine.insert(session=self._session)
 
     async def get_calendar_with_vaccination_site_from_date(
         self, date: datetime.date
@@ -177,23 +243,53 @@ class MongoRepository(Repository):
         )
         return available_sites
 
-    async def get_vaccines_from(self, date: datetime.date) -> List[AdminCalendar]:
-        available_sites = (
-            await Calendar.find(Calendar.date == date)
+
+class MongoUserRepository:
+
+    _session: ClientSession
+
+    def __init__(self, session: ClientSession):
+        self._session = session
+
+    async def update(self, user: User) -> None:
+        await user.replace(session=self._session)
+
+    async def get(self, user_id: PydanticObjectId) -> User:
+        return await User.get(user_id, session=self._session)
+
+    async def get_from_cpf(self, cpf: str) -> User:
+        return await User.find_one(User.cpf == cpf, session=self._session)
+
+    async def get_user_info(self, user_id: PydanticObjectId) -> UserInfo:
+        user = (
+            await User.find(User.id == user_id, session=self._session)
             .aggregate(
                 [
                     {
                         "$lookup": {
-                            "from": "vaccination_sites",
-                            "localField": "vaccination_site",
-                            "foreignField": "_id",
-                            "as": "vaccination_site_info",
+                            "from": "vaccines",
+                            "localField": "_id",
+                            "foreignField": "user",
+                            "as": "vaccine_card",
                         }
                     },
-                    {"$unwind": "$vaccination_site_info"},
+                    {
+                        "$lookup": {
+                            "from": "schedules",
+                            "localField": "_id",
+                            "foreignField": "user",
+                            "as": "schedules",
+                        }
+                    },
                 ],
-                projection_model=AdminCalendar,
+                session=self._session,
+                projection_model=UserInfo,
             )
             .to_list()
         )
-        return available_sites
+
+        if user:
+            return user[0]
+
+    async def create(self, user: User) -> User:
+        return await user.insert(session=self._session)

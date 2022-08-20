@@ -3,10 +3,10 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from src.vacinajp.infrastructure.mongo_client import client
+from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
 from src.vacinajp.domain.models import User, UserInfo
 from src.vacinajp.common.helpers import JwtHelper, SecurityHelper
-from src.vacinajp.api.dependencies import get_current_user
+from src.vacinajp.api.dependencies import get_current_user, get_uow
 
 
 users_router = APIRouter()
@@ -36,11 +36,11 @@ class UserLoginWithPassword(BaseUserLogin):
 
 
 @users_router.post("/")
-async def create_user(user: CreateUser):
-    async with client.start_transaction() as repo:
+async def create_user(user: CreateUser, uow: MongoUnitOfWork = Depends(get_uow)):
+    async with uow():
         user = User(**user.dict())
         try:
-            user = await repo.create_user(user)
+            user = await uow.users.create(user)
         except DuplicateKeyError:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -49,9 +49,9 @@ async def create_user(user: CreateUser):
 
 
 @users_router.post("/login", response_model=Token)
-async def basic_login(login: BasicUserLogin):
-    async with client.start_transaction() as repo:
-        user = await repo.get_user_from_cpf(login.cpf)
+async def basic_login(login: BasicUserLogin, uow: MongoUnitOfWork = Depends(get_uow)):
+    async with uow():
+        user = await uow.users.get_from_cpf(login.cpf)
 
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
@@ -70,9 +70,9 @@ async def basic_login(login: BasicUserLogin):
 
 
 @users_router.post("/login/staff", response_model=Token)
-async def staff_login(login: UserLoginWithPassword):
-    async with client.start_transaction() as repo:
-        user = await repo.get_user_from_cpf(cpf=login.cpf)
+async def staff_login(login: UserLoginWithPassword, uow: MongoUnitOfWork = Depends(get_uow)):
+    async with uow():
+        user = await uow.users.get_from_cpf(login.cpf)
 
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')

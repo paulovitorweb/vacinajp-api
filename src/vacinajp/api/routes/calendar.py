@@ -1,11 +1,13 @@
 import datetime
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from beanie import PydanticObjectId
-from src.vacinajp.domain.models import VaccinacionSite, Calendar, UserInfo, AdminCalendar
-from src.vacinajp.infrastructure.mongo_client import client
-from src.vacinajp.api.dependencies import get_current_user, get_current_operator_user
+
+from src.vacinajp.domain.models import UserInfo, AdminCalendar
+from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.api.dependencies import get_current_user, get_current_operator_user, get_uow
 
 
 calendar_router = APIRouter()
@@ -22,39 +24,12 @@ async def get_available_sites_to_schedule_from_date(
     month: int,
     day: int,
     current_user: UserInfo = Depends(get_current_user),
+    uow: MongoUnitOfWork = Depends(get_uow),
 ):
-    filters = [
-        Calendar.date == datetime.date(year=year, month=month, day=day),
-        Calendar.remaining_schedules > 0,
-        Calendar.is_available == True,
-    ]
-    available_sites = (
-        await Calendar.find(*filters)
-        .aggregate(
-            [
-                {
-                    "$lookup": {
-                        "from": "vaccination_sites",
-                        "localField": "vaccination_site",
-                        "foreignField": "_id",
-                        "as": "vaccination_site_info",
-                    }
-                },
-                {"$unwind": "$vaccination_site_info"},
-                {
-                    "$project": {
-                        "_id": "$vaccination_site_info._id",
-                        "name": "$vaccination_site_info.name",
-                        "address": "$vaccination_site_info.address",
-                        "geo": "$vaccination_site_info.geo",
-                    }
-                },
-            ],
-            projection_model=VaccinacionSite,
+    async with uow():
+        return await uow.calendar.get_available_sites_to_schedule_from_date(
+            datetime.date(year=year, month=month, day=day)
         )
-        .to_list()
-    )
-    return available_sites
 
 
 @calendar_router.patch("/{year}/{month}/{day}/{vaccination_site_id}")
@@ -65,6 +40,7 @@ async def update_calendar(
     vaccination_site_id: PydanticObjectId,
     calendar_update: CalendarUpdate,
     current_user: UserInfo = Depends(get_current_operator_user),
+    uow: MongoUnitOfWork = Depends(get_uow),
 ):
     if (
         calendar_update.is_available is None
@@ -74,13 +50,15 @@ async def update_calendar(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Provide something to be updated",
         )
-    async with client.start_transaction() as repo:
-        if not await repo.change_available_schedules_from_calendar(
-            date=datetime.date(year=year, month=month, day=day),
-            vaccination_site_id=vaccination_site_id,
-            is_available=calendar_update.is_available,
-            schedules_variation=calendar_update.available_schedules_variation,
-        ):
+    async with uow:
+        try:
+            await uow.calendar.change_available_schedules_from_calendar(
+                date=datetime.date(year=year, month=month, day=day),
+                vaccination_site_id=vaccination_site_id,
+                is_available=calendar_update.is_available,
+                schedules_variation=calendar_update.available_schedules_variation,
+            )
+        except AssertionError:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="The calendar could not be updated. Check the number of schedules available.",
@@ -89,9 +67,13 @@ async def update_calendar(
 
 @calendar_router.get("/stats/{year}/{month}/{day}/", response_model=List[AdminCalendar])
 async def get_stats_from_date(
-    year: int, month: int, day: int, current_user: UserInfo = Depends(get_current_operator_user)
+    year: int,
+    month: int,
+    day: int,
+    current_user: UserInfo = Depends(get_current_operator_user),
+    uow: MongoUnitOfWork = Depends(get_uow),
 ):
-    async with client.start_transaction() as repo:
-        return await repo.get_calendar_with_vaccination_site_from_date(
+    async with uow():
+        return await uow.calendar.get_calendar_with_vaccination_site_from_date(
             date=datetime.date(year=year, month=month, day=day)
         )

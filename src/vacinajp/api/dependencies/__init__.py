@@ -1,5 +1,6 @@
 from typing import Optional
 from hmac import compare_digest
+
 from beanie import PydanticObjectId
 from fastapi import HTTPException, Depends, Security, status
 from fastapi.security import (
@@ -14,6 +15,7 @@ from jose import JWTError
 from src.vacinajp.common.config import Settings
 from src.vacinajp.common.helpers import JwtHelper
 from src.vacinajp.infrastructure.mongo_client import client
+from src.vacinajp.infrastructure.mongo_repository import MongoUserRepository, MongoUnitOfWork
 from src.vacinajp.domain.models import UserInfo, UserRole
 
 
@@ -22,6 +24,11 @@ settings = Settings()
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
+
+
+async def get_uow():
+    async with client.start_session() as session:
+        yield MongoUnitOfWork(session)
 
 
 async def get_current_user(authorization: HTTPAuthorizationCredentials = Security(HTTPBearer())):
@@ -36,8 +43,9 @@ async def get_current_user(authorization: HTTPAuthorizationCredentials = Securit
         token_data = TokenData(user_id=user_id)
     except JWTError:
         raise credentials_exception
-    async with client.start_transaction() as repo:
-        user_info = await repo.get_user_info(PydanticObjectId(token_data.user_id))
+    user_info = await MongoUserRepository(session=None).get_user_info(
+        PydanticObjectId(token_data.user_id)
+    )
     if user_info is None:
         raise credentials_exception
     return user_info
@@ -62,10 +70,10 @@ async def get_current_operator_user(user_info: UserInfo = Depends(get_current_us
 
 
 async def check_admin_access(credentials: HTTPBasicCredentials = Security(HTTPBasic())):
-    if credentials.username == settings.admin_username and compare_digest(
+    is_admin = credentials.username == settings.admin_username and compare_digest(
         credentials.password, settings.admin_password
-    ):
-        return True
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials"
     )
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials"
+        )
