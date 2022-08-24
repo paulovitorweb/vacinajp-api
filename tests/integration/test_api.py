@@ -1,9 +1,10 @@
-import datetime
 import pytest
+import base64
 
 from httpx import AsyncClient
 from beanie import PydanticObjectId, operators
 
+from src.vacinajp.common.config import Settings
 from src.vacinajp.domain.models import (
     User,
     UserRole,
@@ -11,153 +12,204 @@ from src.vacinajp.domain.models import (
     Calendar,
     Vaccine,
     VaccineLaboratory,
+    VaccinacionSite,
 )
 
 
 pytestmark = pytest.mark.asyncio
+settings = Settings()
 
 
-class TestContext:
-    user_id: str
-    vaccination_site_id: str
+class BaseUserContext:
+    def get_authorization(self) -> str:
+        return f'Bearer {self.token}'
 
 
-test_context = TestContext()
+class TestUserContext(BaseUserContext):
+    user_cpf: str = ''
+    user_birth_date: str = ''
+    user_id: str = ''
+    token: str = ''
+    vaccination_site_id: str = ''
+
+
+class TestProfessionalUserContext(BaseUserContext):
+    user_cpf: str = ''
+    user_password: str = ''
+    user_birth_date: str = ''
+    user_id: str = ''
+    token: str = ''
+
+
+class TestAdminContext:
+    user_name: str = ''
+    user_password: str = ''
+
+    def get_authorization(self) -> str:
+        value = f'{settings.admin_username}:{settings.admin_password}'
+        return 'Basic ' + base64.b64encode(value.encode()).decode()
+
+
+test_context = TestUserContext()
+test_professional_context = TestProfessionalUserContext()
+test_admin_context = TestAdminContext()
 
 
 async def test__create_user(test_app: AsyncClient):
-    payload = {'name': 'Son Goku'}
+    payload = {'name': 'Jon Snow', 'cpf': '27677113028', 'birth_date': '1990-03-10'}
     response = await test_app.post('/users/', json=payload)
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     json = response.json()
-    assert json['name'] == 'Son Goku'
+    assert json['name'] == 'Jon Snow'
     assert json['roles'] == []
+    assert json['cpf'] == '27677113028'
+    assert json['birth_date'] == '1990-03-10'
+
     assert json['_id'] is not None
 
     test_context.user_id = json['_id']
+    test_context.user_cpf = json['cpf']
+    test_context.user_birth_date = json['birth_date']
+
+
+async def test__user_basic_login(test_app: AsyncClient):
+    payload = {'cpf': '27677113028', 'birth_date': '1990-03-10'}
+    response = await test_app.post('/users/login', json=payload)
+    assert response.status_code == 200
+
+    json = response.json()
+    assert json['access_token']
+    assert json['token_type'] == 'bearer'
+
+    test_context.token = json['access_token']
+
+
+async def test__user_me(test_app: AsyncClient):
+    response = await test_app.get('/users/me', headers=_get_authorization_headers())
+    assert response.status_code == 200
+
+    json = response.json()
+    assert json['_id'] == test_context.user_id
+    assert json['name'] == 'Jon Snow'
+    assert json['roles'] == []
+    assert json['cpf'] == '27677113028'
+    assert json['birth_date'] == '1990-03-10'
+
+    assert len(json['vaccine_card']) == 0
+    assert len(json['schedules']) == 0
+
+
+async def test__get_available_schedules_from_date(test_app: AsyncClient):
+    response = await test_app.get('/calendar/2022/8/1', headers=_get_authorization_headers())
+    assert response.status_code == 200
+    test_context.vaccination_site_id = response.json()[0]['_id']
+
+
+async def test__create_schedule(test_app: AsyncClient):
+    body = {'date': '2022-08-01', 'vaccination_site': test_context.vaccination_site_id}
+    response = await test_app.post('/schedules', headers=_get_authorization_headers(), json=body)
+    assert response.status_code == 201
+
+    json = response.json()
+    assert json['_id'] is not None
+    assert json['user'] == test_context.user_id
+    assert json['date'] == '2022-08-01'
+    assert json['vaccination_site'] == test_context.vaccination_site_id
+    assert json['vaccination_site_name'] == getattr(
+        await VaccinacionSite.get(PydanticObjectId(test_context.vaccination_site_id)), 'name'
+    )
+    assert json['user_attended'] is False
+    assert json['vaccine'] is None
+
+
+async def test__user_me_should_return_schedule(test_app: AsyncClient):
+    response = await test_app.get('/users/me', headers=_get_authorization_headers())
+    assert response.status_code == 200
+
+    json = response.json()
+    assert len(json['vaccine_card']) == 0
+    assert len(json['schedules']) == 1
+    assert json['schedules'][0]['user_attended'] is False
+    assert json['schedules'][0]['vaccine'] is None
+
+
+async def test__create_user_to_be_professional(test_app: AsyncClient):
+    payload = {'name': 'Daenerys Targaryen', 'cpf': '27677113029', 'birth_date': '1990-03-15'}
+    response = await test_app.post('/users/', json=payload)
+    assert response.status_code == 201
+
+    json = response.json()
+    test_professional_context.user_id = json['_id']
+    test_professional_context.user_cpf = json['cpf']
+    test_professional_context.user_birth_date = json['birth_date']
 
 
 async def test__admin_set_role_to_user(test_app: AsyncClient):
     payload = {'roles': ['HEALTHCARE_PROFESSIONAL']}
-    response = await test_app.patch(f'/admin/users/{test_context.user_id}/roles', json=payload)
+    headers = {'Authorization': test_admin_context.get_authorization()}
+    response = await test_app.patch(
+        f'/admin/users/{test_professional_context.user_id}/roles', json=payload, headers=headers
+    )
     assert response.status_code == 200
-    user = await User.get(PydanticObjectId(test_context.user_id))
-    assert user.roles == [UserRole.HEALTHCARE_PROFESSIONAL]
 
 
-async def test__get_user(test_app: AsyncClient):
-    response = await test_app.get(f'/users/{test_context.user_id}')
-    assert response.status_code == 200
-    json = response.json()
-    assert json['name'] == 'Son Goku'
-    assert json['roles'] == ['HEALTHCARE_PROFESSIONAL']
-    assert json['_id'] is not None
-
-
-async def test__admin_unset_role_to_user(test_app: AsyncClient):
-    payload = {'roles': []}
-    response = await test_app.patch(f'/admin/users/{test_context.user_id}/roles', json=payload)
-    assert response.status_code == 200
-    user = await User.get(PydanticObjectId(test_context.user_id))
-    assert user.roles == []
-
-
-async def test__get_available_sites_to_schedule_from_date(test_app: AsyncClient):
-    response = await test_app.get(f'/calendar/2022/8/2/vaccination-sites')
-    assert response.status_code == 200
-    json = response.json()
-    assert len(json) > 0
-    sites_available_before = len(json)
-    test_context.vaccination_site_ids = [json[0]['_id'], json[1]['_id'], json[3]['_id']]
-
-    sites_to_make_unavailable = await Calendar.find(
-        operators.In(
-            Calendar.vaccination_site,
-            [PydanticObjectId(site_id) for site_id in test_context.vaccination_site_ids[:2]],
-        ),
-        Calendar.date == datetime.date(year=2022, month=8, day=2),
-    ).to_list()
-    sites_to_make_unavailable[0].is_available = False
-    await sites_to_make_unavailable[0].replace()
-    sites_to_make_unavailable[1].remaining_schedules = 0
-    await sites_to_make_unavailable[1].replace()
-
-    response = await test_app.get(f'/calendar/2022/8/2/vaccination-sites')
-    assert response.status_code == 200
-    assert len(response.json()) == sites_available_before - 2
-
-
-async def test__create_schedule(test_app: AsyncClient):
-    calendar_before = await get_calendar()
+async def test__basic_login_for_professional_user_should_not_succeed(test_app: AsyncClient):
     payload = {
-        'user': test_context.user_id,
-        'date': '2022-08-12',
-        'vaccination_site': test_context.vaccination_site_ids[2],
+        'cpf': test_professional_context.user_cpf,
+        'birth_date': test_professional_context.user_birth_date,
     }
-    response = await test_app.post('/schedules/', json=payload)
-    assert response.status_code == 204
+    response = await test_app.post('/users/login', json=payload)
+    assert response.status_code == 403
 
-    schedule = await Schedule.find_one(Schedule.user == PydanticObjectId(test_context.user_id))
-    assert schedule.date == datetime.date(year=2022, month=8, day=12)
-    assert schedule.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2])
-    assert schedule.vaccination_site_name
-    assert schedule.user_attended is False
-    assert schedule.vaccine is None
 
-    calendar_after = await get_calendar()
-    assert calendar_after.remaining_schedules == calendar_before.remaining_schedules - 1
+async def test__admin_generate_password(test_app: AsyncClient):
+    headers = {'Authorization': test_admin_context.get_authorization()}
+    response = await test_app.patch(
+        f'/admin/users/{test_professional_context.user_id}/generate-password', headers=headers
+    )
+    assert response.status_code == 200
+    test_professional_context.user_password = response.json()['password']
+
+
+async def test__staff_login(test_app: AsyncClient):
+    payload = {
+        'cpf': test_professional_context.user_cpf,
+        'password': test_professional_context.user_password,
+    }
+    response = await test_app.post('/users/login/staff', json=payload)
+    assert response.status_code == 200
+
+    json = response.json()
+    assert json['access_token']
+    assert json['token_type'] == 'bearer'
+
+    test_professional_context.token = json['access_token']
 
 
 async def test__create_vaccine(test_app: AsyncClient):
-    calendar_before = await get_calendar()
+    headers = {'Authorization': test_professional_context.get_authorization()}
     payload = {
         'user': test_context.user_id,
-        'date': '2022-08-12',
-        'vaccination_site': test_context.vaccination_site_ids[2],
+        'date': '2022-08-01',
+        'vaccination_site': test_context.vaccination_site_id,
         'dose': 1,
         'laboratory': 'PFIZER',
     }
-    response = await test_app.post('/vaccines/', json=payload)
+    response = await test_app.post('/vaccines', json=payload, headers=headers)
+    assert response.status_code == 201
+
+
+async def test__user_me_should_return_vaccine_card_and_modified_schedule(test_app: AsyncClient):
+    response = await test_app.get('/users/me', headers=_get_authorization_headers())
     assert response.status_code == 200
 
-    vaccine = await Vaccine.find_one(Vaccine.user == PydanticObjectId(test_context.user_id))
-    assert vaccine.date == datetime.date(year=2022, month=8, day=12)
-    assert vaccine.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2])
-    assert vaccine.vaccination_site_name
-    assert vaccine.dose == 1
-    assert vaccine.laboratory == VaccineLaboratory.PFIZER
-
-    calendar_after = await get_calendar()
-    assert calendar_after.applied_vaccines == calendar_before.applied_vaccines + 1
-
-    schedule = await Schedule.find_one(
-        Schedule.date == datetime.date(year=2022, month=8, day=12),
-        Schedule.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2]),
-        Schedule.user == PydanticObjectId(test_context.user_id),
-    )
-    assert schedule.user_attended is True
-    assert schedule.vaccine == vaccine.id
+    json = response.json()
+    assert len(json['vaccine_card']) == 1
+    assert len(json['schedules']) == 1
+    assert json['schedules'][0]['user_attended'] is True
+    assert json['schedules'][0]['vaccine'] is not None
 
 
-async def test__admin_get_stats(test_app: AsyncClient):
-    response = await test_app.get('/admin/stats/2022/8/2/')
-    assert response.status_code == 200
-    assert len(response.json()) > 0
-
-    first_item = response.json()[0]
-    assert first_item['_id'] is not None
-    assert first_item['date'] is not None
-    assert first_item['vaccination_site'] is not None
-    assert first_item['total_schedules'] is not None
-    assert first_item['remaining_schedules'] is not None
-    assert first_item['is_available'] is not None
-    assert first_item['applied_vaccines'] is not None
-    assert first_item['vaccination_site_info'] is not None
-
-
-async def get_calendar() -> Calendar:
-    return await Calendar.find_one(
-        Calendar.date == datetime.date(year=2022, month=8, day=12),
-        Calendar.vaccination_site == PydanticObjectId(test_context.vaccination_site_ids[2]),
-    )
+def _get_authorization_headers():
+    return {'Authorization': test_context.get_authorization()}

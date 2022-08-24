@@ -45,16 +45,10 @@ make dev
 
 ### Testes
 
-Há um conjunto de testes de integração que podem ser executados com
+Há um conjunto de testes unitários e de integração que podem ser executados com
 
 ```
 make test
-```
-
-Ou
-
-```
-pytest -v
 ```
 
 A suíte de testes assíncronos foi construída com:
@@ -71,9 +65,7 @@ A suíte de testes assíncronos foi construída com:
 
 ### To do
 
+- [ ] Frontend
 - [ ] Rota para retornar locais de vacinação por proximidade geográfica
-- [ ] Desenho de permissões
-- [ ] Login e autenticação
 - [ ] Mais cenários de teste
-- [ ] Mockar banco com mongomock_motor
-- [ ] Implementar cache em rotas mais perenes
+- [ ] Implementar cache

@@ -2,6 +2,7 @@ from pydantic import BaseSettings
 
 
 class Settings(BaseSettings):
+    environment: str = 'local'
     mongo_connection: str = "mongodb://localhost:27017"
     mongo_db: str = "vacinajp"
     jwt_token_expire: int = 30

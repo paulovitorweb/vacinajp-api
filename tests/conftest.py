@@ -4,6 +4,9 @@ from asgi_lifespan import LifespanManager
 from httpx import AsyncClient
 
 from src.vacinajp.api.main import app
+from src.vacinajp.infrastructure.mongo_client import client as mongo_client
+
+from .fake_db import get_fake_calendar, get_fake_vaccination_sites
 
 
 @pytest_asyncio.fixture()
@@ -24,3 +27,13 @@ def event_loop(request):
     loop = asyncio.get_event_loop()
     yield loop
     loop.close()
+
+
+@pytest_asyncio.fixture(autouse=True, scope="session")
+async def db_test():
+    db = mongo_client.db
+    result = await db['vaccination_sites'].insert_many(get_fake_vaccination_sites())
+    await db['calendar'].insert_many(get_fake_calendar(result.inserted_ids))
+    yield db
+    for collection in await db.list_collection_names():
+        await db[collection].delete_many({})

@@ -19,7 +19,7 @@ class VaccineCreate(BaseModel):
     laboratory: VaccineLaboratory
 
 
-@vaccine_router.post("/")
+@vaccine_router.post("/", status_code=201)
 async def create_vaccine(
     vaccine: VaccineCreate,
     current_user: UserInfo = Depends(get_current_professional_user),

@@ -16,7 +16,7 @@ class ScheduleCreate(BaseModel):
     vaccination_site: str
 
 
-@schedule_router.post("/", response_model=Schedule)
+@schedule_router.post("/", response_model=Schedule, status_code=201)
 async def create_schedule(
     schedule: ScheduleCreate,
     current_user: UserInfo = Depends(get_current_user),

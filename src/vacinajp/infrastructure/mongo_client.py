@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorClientSession
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorClientSession, AsyncIOMotorDatabase
 from beanie import init_beanie
 
 from src.vacinajp.common.config import Settings
@@ -18,12 +18,16 @@ class MongoClient:
         self._database = database
 
     async def initialize(self) -> None:
-        await init_beanie(database=self._client[self._database], document_models=__beanie_models__)
+        await init_beanie(database=self.db, document_models=__beanie_models__)
 
     @asynccontextmanager
     async def start_session(self) -> AsyncIterator[AsyncIOMotorClientSession]:
         async with await self._client.start_session() as session:
             yield session
+
+    @property
+    def db(self) -> AsyncIOMotorDatabase:
+        return self._client[self._database]
 
 
 settings = Settings()
