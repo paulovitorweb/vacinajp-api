@@ -7,7 +7,7 @@ dev:
 #
 # Run tests
 test:
-	ENVIRONMENT=test pytest --cov=src --cov-report=html
+	MONGO_DB=test pytest --cov=src --cov-report=html
 
 #
 # Run lint

@@ -3,10 +3,6 @@ import abc
 
 class Repository(abc.ABC):
     @abc.abstractmethod
-    async def create_schedule(self, schedule):
-        raise NotImplementedError
-
-    @abc.abstractmethod
     async def get_available_calendar_from_schedule(self, schedule):
         raise NotImplementedError
 

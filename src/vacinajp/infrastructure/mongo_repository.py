@@ -133,7 +133,7 @@ class MongoCalendarRepository:
             Calendar.date == schedule.date,
             Calendar.vaccination_site == schedule.vaccination_site,
             Calendar.remaining_schedules > 0,
-            Calendar.is_available == True,
+            Calendar.is_available == True,  # noqa
         ]
         return await Calendar.find_one(*filters)
 
@@ -143,7 +143,7 @@ class MongoCalendarRepository:
         filters = [
             Calendar.date == date,
             Calendar.remaining_schedules > 0,
-            Calendar.is_available == True,
+            Calendar.is_available == True,  # noqa
         ]
         available_sites = (
             await Calendar.find(*filters)
