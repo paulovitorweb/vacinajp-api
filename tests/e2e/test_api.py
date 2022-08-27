@@ -2,18 +2,10 @@ import pytest
 import base64
 
 from httpx import AsyncClient
-from beanie import PydanticObjectId, operators
+from beanie import PydanticObjectId
 
 from src.vacinajp.common.config import Settings
-from src.vacinajp.domain.models import (
-    User,
-    UserRole,
-    Schedule,
-    Calendar,
-    Vaccine,
-    VaccineLaboratory,
-    VaccinacionSite,
-)
+from src.vacinajp.domain.models import VaccinacionSite
 
 
 pytestmark = pytest.mark.asyncio

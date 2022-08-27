@@ -251,7 +251,7 @@ class MongoUserRepository:
 
     _session: ClientSession
 
-    def __init__(self, session: ClientSession):
+    def __init__(self, session: Optional[ClientSession] = None):
         self._session = session
 
     async def update(self, user: User) -> None:

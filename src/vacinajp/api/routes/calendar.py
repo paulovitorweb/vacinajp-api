@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from beanie import PydanticObjectId
 
-from src.vacinajp.domain.models import UserInfo, AdminCalendar
+from src.vacinajp.domain.models import UserInfo, AdminCalendar, VaccinacionSite
 from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
 from src.vacinajp.api.dependencies import get_current_user, get_current_operator_user, get_uow
 
@@ -18,7 +18,7 @@ class CalendarUpdate(BaseModel):
     available_schedules_variation: Optional[int] = None
 
 
-@calendar_router.get("/{year}/{month}/{day}")
+@calendar_router.get("/{year}/{month}/{day}", response_model=List[VaccinacionSite])
 async def get_available_sites_to_schedule_from_date(
     year: int,
     month: int,

@@ -80,6 +80,9 @@ class User(Document):
 
 class VaccineLaboratory(Enum):
     PFIZER = 'PFIZER'
+    JANSSEN = 'JANSSEN'
+    ASTRAZENECA = 'ASTRAZENECA'
+    CORONAVAC = 'CORONAVAC'
 
 
 class Vaccine(Document):

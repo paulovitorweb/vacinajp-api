@@ -37,3 +37,10 @@ async def db_test():
     yield db
     for collection in await db.list_collection_names():
         await db[collection].delete_many({})
+
+
+@pytest_asyncio.fixture()
+async def session_test():
+    await mongo_client.initialize()
+    async with mongo_client.start_session() as session:
+        yield session
