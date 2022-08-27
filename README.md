@@ -62,7 +62,7 @@ A cobertura do código fica disponível em `htmlcov/index.html`.
 É possível ver a saída verbosa. Atente-se para a necessidade de definir a variável de ambiente com o nome do banco de teste no escopo dos testes. Por exemplo:
 
 ```
-ENVIRONMENT=test pytest -v
+MONGO_DB=test pytest -v
 ```
 
 A suíte de testes assíncronos foi construída com:
