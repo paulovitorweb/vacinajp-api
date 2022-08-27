@@ -45,15 +45,30 @@ make dev
 
 ### Testes
 
-Há um conjunto de testes unitários e de integração que podem ser executados com
+Há três conjuntos de testes que podem ser encontrados na pasta `tests`. São eles:
+
+- unitários: testam pequenas unidades de código, isolando-as de dependências externas, como o banco de dados, e de módulos externos;
+- de integração: testam a camada de abstração do banco de dados (única dependência externa até o momento), verificando se os métodos do repositório refletem corretamente no banco de dados e vive-versa;
+- end-to-end: testam a API, verificando se as chamadas aos endpoints têm o retorno esperado, unidos dentro de um contexto de uso (do cadastro de usuário, passando pelo agendamento, baixa da vacina aplicada e disponibilização no cartão de vacina digital).
+
+Os testes podem ser executados com:
 
 ```
 make test
 ```
 
+A cobertura do código fica disponível em `htmlcov/index.html`.
+
+É possível ver a saída verbosa. Atente-se para a necessidade de definir a variável de ambiente com o nome do banco de teste no escopo dos testes. Por exemplo:
+
+```
+ENVIRONMENT=test pytest -v
+```
+
 A suíte de testes assíncronos foi construída com:
 
 - pytest
+- pytest-mock: que oferece uma fixture com recursos de mock do módulo unittest do Python
 - httpx: para um cliente de testes com suporte a requisições assíncronas
 - asgi-lifespan: para conseguir testar a api sem precisar subir o servidor
 - pytest-asyncio: para testar código assíncrono com pytest
