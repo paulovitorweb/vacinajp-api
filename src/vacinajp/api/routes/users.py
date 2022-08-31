@@ -68,11 +68,8 @@ async def create_user(user: CreateUser, uow: MongoUnitOfWork = Depends(get_uow))
         user = User(**user.dict())
         try:
             user = await uow.users.create(user)
-        except UserAlreadyExists:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail='User with provided cpf already exists',
-            )
+        except UserAlreadyExists as err:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=err)
         return user
 
 

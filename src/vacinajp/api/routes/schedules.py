@@ -3,7 +3,9 @@ import datetime
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from src.vacinajp.common.errors import ScheduleNotAvailable
 from src.vacinajp.domain.models import Schedule, UserInfo
+from src.vacinajp.domain.use_cases import CreateScheduleUseCase
 from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
 from src.vacinajp.api.dependencies import get_current_user, get_uow
 
@@ -24,14 +26,10 @@ async def create_schedule(
 ):
     async with uow(transactional=True):
         schedule = Schedule(user=current_user.id, **schedule.dict())
-        calendar = await uow.calendar.get_available_calendar_from_schedule(schedule)
-        if not calendar:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Schedule not available for this date and vaccination site",
-            )
-        site = await uow.vaccination_sites.get(schedule.vaccination_site)
-        schedule.vaccination_site_name = site.name
-        schedule = await uow.schedules.create(schedule)
-        await uow.calendar.decrease_remaining_schedules(calendar)
-        return schedule
+        use_case = CreateScheduleUseCase(uow=uow, schedule=schedule)
+        try:
+            await use_case.exec()
+        except ScheduleNotAvailable as err:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=err)
+
+        return use_case.created_schedule

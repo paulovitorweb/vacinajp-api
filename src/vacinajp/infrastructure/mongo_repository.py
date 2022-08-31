@@ -54,27 +54,6 @@ class MongoUnitOfWork:
     def vaccines(self) -> 'MongoVaccineRepository':
         return MongoVaccineRepository(session=self._session)
 
-    async def get_vaccines_from(self, date: datetime.date) -> List[AdminCalendar]:
-        available_sites = (
-            await Calendar.find(Calendar.date == date)
-            .aggregate(
-                [
-                    {
-                        "$lookup": {
-                            "from": "vaccination_sites",
-                            "localField": "vaccination_site",
-                            "foreignField": "_id",
-                            "as": "vaccination_site_info",
-                        }
-                    },
-                    {"$unwind": "$vaccination_site_info"},
-                ],
-                projection_model=AdminCalendar,
-            )
-            .to_list()
-        )
-        return available_sites
-
 
 class MongoScheduleRepository:
 
@@ -298,4 +277,4 @@ class MongoUserRepository:
         try:
             return await user.insert(session=self._session)
         except DuplicateKeyError:
-            raise UserAlreadyExists
+            raise UserAlreadyExists("User with provided cpf already exists")
