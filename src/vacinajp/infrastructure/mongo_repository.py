@@ -7,6 +7,14 @@ from pymongo.errors import DuplicateKeyError
 from pymongo.client_session import ClientSession
 from beanie import PydanticObjectId
 
+from src.vacinajp.infrastructure.repository import (
+    UnitOfWork,
+    UserRepository,
+    ScheduleRepository,
+    CalendarRepository,
+    VaccinationSiteRepository,
+    VaccineRepository,
+)
 from src.vacinajp.common.errors import UserAlreadyExists
 from src.vacinajp.domain.models import (
     Schedule,
@@ -19,13 +27,7 @@ from src.vacinajp.domain.models import (
 )
 
 
-class MongoUnitOfWork:
-
-    _session: ClientSession
-
-    def __init__(self, session: ClientSession):
-        self._session = session
-
+class MongoUnitOfWork(UnitOfWork):
     @asynccontextmanager
     async def __call__(self, transactional: bool = False) -> AsyncIterator['MongoUnitOfWork']:
         if transactional:
@@ -55,13 +57,7 @@ class MongoUnitOfWork:
         return MongoVaccineRepository(session=self._session)
 
 
-class MongoScheduleRepository:
-
-    _session: ClientSession
-
-    def __init__(self, session: ClientSession):
-        self._session = session
-
+class MongoScheduleRepository(ScheduleRepository):
     async def create(self, schedule: Schedule) -> Schedule:
         return await schedule.insert(session=self._session)
 
@@ -78,35 +74,17 @@ class MongoScheduleRepository:
         await schedule.replace(session=self._session)
 
 
-class MongoVaccinationSiteRepository:
-
-    _session: ClientSession
-
-    def __init__(self, session: ClientSession):
-        self._session = session
-
+class MongoVaccinationSiteRepository(VaccinationSiteRepository):
     async def get(self, vaccination_site_id: PydanticObjectId) -> VaccinacionSite:
         return await VaccinacionSite.get(vaccination_site_id)
 
 
-class MongoVaccineRepository:
-
-    _session: ClientSession
-
-    def __init__(self, session: ClientSession):
-        self._session = session
-
+class MongoVaccineRepository(VaccineRepository):
     async def create(self, vaccine: Vaccine) -> Vaccine:
         return await vaccine.insert(session=self._session)
 
 
-class MongoCalendarRepository:
-
-    _session: ClientSession
-
-    def __init__(self, session: ClientSession):
-        self._session = session
-
+class MongoCalendarRepository(CalendarRepository):
     async def get_available_calendar_from_schedule(self, schedule: Schedule) -> Calendar:
         filters = [
             Calendar.date == schedule.date,
@@ -226,13 +204,7 @@ class MongoCalendarRepository:
         return available_sites
 
 
-class MongoUserRepository:
-
-    _session: ClientSession
-
-    def __init__(self, session: Optional[ClientSession] = None):
-        self._session = session
-
+class MongoUserRepository(UserRepository):
     async def update(self, user: User) -> None:
         await user.replace(session=self._session)
 

@@ -94,7 +94,7 @@ async def test__create_vaccine_use_case_should_update_schedule(mocker: MockerFix
 
     updated_schedule: Schedule = update_schedule_method.call_args[0][0]
 
-    assert updated_schedule.user_attended == True
+    assert updated_schedule.user_attended is True
     assert updated_schedule.vaccine == ObjectId('630a44640706d38696810987')
 
 

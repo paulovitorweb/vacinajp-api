@@ -1,12 +1,12 @@
 from typing import Optional
 
 from src.vacinajp.domain.models import Vaccine
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.infrastructure.repository import UnitOfWork
 
 
 class CreateVaccineUseCase:
-    def __init__(self, uow: MongoUnitOfWork, vaccine: Vaccine) -> None:
-        self._uow: MongoUnitOfWork = uow
+    def __init__(self, uow: UnitOfWork, vaccine: Vaccine) -> None:
+        self._uow: UnitOfWork = uow
         self._vaccine: Vaccine = vaccine
 
         self._created_vaccine: Optional[Vaccine] = None

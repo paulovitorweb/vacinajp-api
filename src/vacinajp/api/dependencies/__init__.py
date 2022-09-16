@@ -26,6 +26,8 @@ class TokenData(BaseModel):
     user_id: Optional[str] = None
 
 
+# TO DO: implementar funções intermediárias para que a
+# camada da API seja agnóstica do banco de dados: get_uow, get_user_info
 async def get_uow():
     async with client.start_session() as session:
         yield MongoUnitOfWork(session)

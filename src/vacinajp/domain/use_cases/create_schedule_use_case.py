@@ -2,15 +2,12 @@ from typing import Optional
 
 from src.vacinajp.common.errors import ScheduleNotAvailable
 from src.vacinajp.domain.models import Schedule
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
-
-# TO DO: implementar interface do UnitOfWork e usar aqui como anotação de tipo
-# para o caso de uso ser agnóstico de banco de dados
+from src.vacinajp.infrastructure.repository import UnitOfWork
 
 
 class CreateScheduleUseCase:
-    def __init__(self, uow: MongoUnitOfWork, schedule: Schedule) -> None:
-        self._uow: MongoUnitOfWork = uow
+    def __init__(self, uow: UnitOfWork, schedule: Schedule) -> None:
+        self._uow: UnitOfWork = uow
         self._schedule: Schedule = schedule
 
         self._created_schedule: Optional[Schedule] = None
