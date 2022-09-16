@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from beanie import PydanticObjectId
 
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.infrastructure.repository import UnitOfWork
 from src.vacinajp.domain.models import User, UserInfo, UserRole
 from src.vacinajp.common.helpers import JwtHelper, SecurityHelper
 from src.vacinajp.common.errors import UserAlreadyExists
@@ -63,7 +63,7 @@ login_responses = {
     status_code=201,
     responses={409: {"model": ExceptionDetail}},
 )
-async def create_user(user: CreateUser, uow: MongoUnitOfWork = Depends(get_uow)):
+async def create_user(user: CreateUser, uow: UnitOfWork = Depends(get_uow)):
     async with uow():
         user = User(**user.dict())
         try:
@@ -79,7 +79,7 @@ async def create_user(user: CreateUser, uow: MongoUnitOfWork = Depends(get_uow))
     status_code=200,
     responses=login_responses,
 )
-async def basic_login(login: BasicUserLogin, uow: MongoUnitOfWork = Depends(get_uow)):
+async def basic_login(login: BasicUserLogin, uow: UnitOfWork = Depends(get_uow)):
     async with uow():
         user = await uow.users.get_from_cpf(login.cpf)
 
@@ -105,7 +105,7 @@ async def basic_login(login: BasicUserLogin, uow: MongoUnitOfWork = Depends(get_
     status_code=200,
     responses=login_responses,
 )
-async def staff_login(login: UserLoginWithPassword, uow: MongoUnitOfWork = Depends(get_uow)):
+async def staff_login(login: UserLoginWithPassword, uow: UnitOfWork = Depends(get_uow)):
     async with uow():
         user = await uow.users.get_from_cpf(login.cpf)
 

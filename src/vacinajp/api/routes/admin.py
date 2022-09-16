@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from beanie import PydanticObjectId
 
 from src.vacinajp.domain.models import UserRole, VaccinacionSite, Calendar, Address, GeoJson2DPoint
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.infrastructure.repository import UnitOfWork
 from src.vacinajp.common.helpers import SecurityHelper
 from src.vacinajp.api.dependencies import check_admin_access, get_uow
 
@@ -29,7 +29,7 @@ async def set_role_to_user(
     user_id: PydanticObjectId,
     role_to_user: RoleToUser,
     _: bool = Depends(check_admin_access),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     # this context doesn't have to be transactional because it's not multi-document
     async with uow():
@@ -42,7 +42,7 @@ async def set_role_to_user(
 async def generate_password(
     user_id: PydanticObjectId,
     _: bool = Depends(check_admin_access),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     # this context doesn't have to be transactional because it's not multi-document
     async with uow():

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 
 from src.vacinajp.domain.models import Vaccine, VaccineLaboratory, UserInfo
 from src.vacinajp.domain.use_cases import CreateVaccineUseCase
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.infrastructure.repository import UnitOfWork
 from src.vacinajp.api.dependencies import get_current_professional_user, get_uow
 
 
@@ -24,7 +24,7 @@ class VaccineCreate(BaseModel):
 async def create_vaccine(
     vaccine: VaccineCreate,
     current_user: UserInfo = Depends(get_current_professional_user),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     async with uow(transactional=True):
         site = await uow.vaccination_sites.get(vaccine.vaccination_site)

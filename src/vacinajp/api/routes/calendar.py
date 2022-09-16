@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from beanie import PydanticObjectId
 
 from src.vacinajp.domain.models import UserInfo, AdminCalendar, VaccinacionSite
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.infrastructure.repository import UnitOfWork
 from src.vacinajp.api.dependencies import get_current_user, get_current_operator_user, get_uow
 
 
@@ -24,7 +24,7 @@ async def get_available_sites_to_schedule_from_date(
     month: int,
     day: int,
     current_user: UserInfo = Depends(get_current_user),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     async with uow():
         return await uow.calendar.get_available_sites_to_schedule_from_date(
@@ -40,7 +40,7 @@ async def update_calendar(
     vaccination_site_id: PydanticObjectId,
     calendar_update: CalendarUpdate,
     current_user: UserInfo = Depends(get_current_operator_user),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     if (
         calendar_update.is_available is None
@@ -71,7 +71,7 @@ async def get_stats_from_date(
     month: int,
     day: int,
     current_user: UserInfo = Depends(get_current_operator_user),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     async with uow():
         return await uow.calendar.get_calendar_with_vaccination_site_from_date(

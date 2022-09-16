@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from src.vacinajp.common.errors import ScheduleNotAvailable
 from src.vacinajp.domain.models import Schedule, UserInfo
 from src.vacinajp.domain.use_cases import CreateScheduleUseCase
-from src.vacinajp.infrastructure.mongo_repository import MongoUnitOfWork
+from src.vacinajp.infrastructure.repository import UnitOfWork
 from src.vacinajp.api.dependencies import get_current_user, get_uow
 
 
@@ -22,7 +22,7 @@ class ScheduleCreate(BaseModel):
 async def create_schedule(
     schedule: ScheduleCreate,
     current_user: UserInfo = Depends(get_current_user),
-    uow: MongoUnitOfWork = Depends(get_uow),
+    uow: UnitOfWork = Depends(get_uow),
 ):
     async with uow(transactional=True):
         schedule = Schedule(user=current_user.id, **schedule.dict())
